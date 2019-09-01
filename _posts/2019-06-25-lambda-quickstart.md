@@ -7,12 +7,13 @@ categories:
   - lambda
   - automation
   - tutorial
+  - kubernetes
 author_staff_member: ed
 dark_background: true
 ---
 
-In this post we are going to follow the steps necessary to configure OpenFaaS to execute function on AWS Lambda using 
-the new faas-lambda provider. See the previous blog post [announcing support for AWS Lambda] for an overview of the 
+In this post we are going to follow the steps necessary to configure OpenFaaS to execute functions on AWS Lambda using 
+the new faas-lambda provider. See the previous blog post [announcing support for AWS Lambda](../introducing-openfaas-for-lambda) for an overview of the 
 technology.
 
 
@@ -23,7 +24,7 @@ To follow the steps in this article it is only necessary to have a Kubernetes cl
 - [Helm installed](https://github.com/openfaas/faas-netes/blob/master/HELM.md)
 
 ### 1. Get an early access token
-`faas-lambda` is currently in early access, please you the link below to get your access token
+`faas-lambda` is currently in early access, please use the link below to get your access token
 
 - [Create an access token](https://ewilde.o6s.io/faas-lambda-jwt-page)
 
@@ -32,12 +33,12 @@ To follow the steps in this article it is only necessary to have a Kubernetes cl
 Installing OpenFaaS for Lambda requires the following high-level steps:
 
 - Create a Kubernetes namespaces `openfaas` for the OpenFaaS system components.
-- Create AWS IAM roles. One for the provider and one for deployed functions to inherit. 
-- Allow the provider access to AWS using access key and secret, which are stored as Kubernetes secretes
+- Create AWS IAM roles. One for the OpenFaaS Lambda provider and one for deployed functions to inherit. 
+- Allow the provider access to AWS using a access key and secret, which are secured as Kubernetes secretes
 - Deploy the OpenFaaS Helm chart using specific Lambda configuration options
 
 #### 2.1. Create recommended namespaces
-`$kubectl apply -f https://raw.githubusercontent.com/openfaas/faas-netes/master/namespaces.yml`
+`$ kubectl apply -f https://raw.githubusercontent.com/openfaas/faas-netes/master/namespaces.yml`
 
 #### 2.2. Create an OpenFaaS Provider IAM role
 In order for the `faas-lambda` provider to communicate with the AWS Lambda service is needs the following minimum 
@@ -153,7 +154,9 @@ Your requirements will be specific to you, in this example I am giving functions
 
 OR
 
-##### 2.3.2. No access function IAM Role
+##### 2.3.2. No access required, function IAM Role
+
+Use this configuration if your functions do not require any access to AWS services. Skip this step if you have completed [2.3.1](#231-restricted-function-iam-role). 
 
 ```javascript
 {
@@ -177,9 +180,9 @@ OR
 - Create a [new IAM role](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user.html), and assign it the above policy. For example call this new role `OpenFaaS Lambda Function Role`. 
 
 #### 2.4. Assign AWS access credentials to faas-lambda using Kubernetes secrets
-This is a secure way to pass the AWS access credentials to the `faas-lambda` provider
+Create a secret to store the AWS credentials in the Kubernetes secret store.
 
-```
+```sh
 $ export AWS_ACCESS_KEY_ID={value from step}
 export AWS_SECRET_ACCESS_KEY={value from last step}
 
@@ -207,7 +210,7 @@ Below are the commands to clone and deploy the official OpenFaaS Helm chart, con
 Please change the `--set` parameters `faaslambda.aws_region`, `faaslambda.lambda_execution_role`, `faaslambda.access_token` and
 `faaslambda.access_email` with the values you gathered together in the previous step.
 
-```bash
+```sh
 $ git clone git@github.com:openfaas/faas-netes.git
 cd faas-netes
 helm repo add openfaas https://openfaas.github.io/faas-netes/
@@ -222,11 +225,11 @@ helm repo update \
                                      --set faaslambda.access_email=fredjones@gmail.com
 ```
 
-### 3. Verifying the installation
+### 3. Verify the installation
 
 #### 3.1 Main OpenFaaS components are running
 
-```bash
+```sh
 $ kubectl get pods -n openfaas
 
 kubectl get pods -n openfaas                                                                 290ms  Wed 26 Jun 08:06:38 2019
@@ -238,6 +241,11 @@ nats-75d8f56846-j2b4b           1/1     Running   0          8d
 prometheus-5945df7857-rt2fw     1/1     Running   0          8d
 queue-worker-5f96b567c5-pnsgd   1/1     Running   0          8d
 
+```
+
+#### 3.2 Check the version / provider
+
+```sh
 $ faas-cli version
 
   ___                   _____           ____
@@ -261,10 +269,15 @@ Provider
  sha:           6de5591299665e5cd0b984b7e0ef195dd3e2d2ea
 ```
 
+Note the `provider name` should be `faas-lambda`, this indicates it's configured to use the OpenFaaS AWS Lambda provider.
+
 #### 3.2 Deploy your first OpenFaaS function to AWS Lambda
 
+To test our deployment we are going to configure a useful OpenFaaS function that returns SSL/TLS certificate information
+for a given URL.
+
 **Deploy function**
-```bash
+```sh
 $ faas store deploy "SSL/TLS cert info"
 
 
@@ -274,15 +287,15 @@ URL: http://localhost:8083/function/certinfo
 ```
 
 **Verify deployment**
-```bash
+```sh
 $ aws lambda list-functions | jq '.Functions[].FunctionName' -r | grep certinfo
  
 certinfo
 ```
 
 **Invoke the function with the OpenFaaS CLI**
-```bash
-$ echo -n github.com | faas invoke certinfo                                                   2310ms  Wed 26 Jun 08:11:42 2019
+```sh
+$ echo -n github.com | faas invoke certinfo
   
   Host 140.82.118.4
   Port 443
@@ -318,3 +331,11 @@ Currently we only support the following templates:
 - python-flask37
 - node
 - go
+
+
+## Wrapping up
+
+In this article we have shown you how in 4 simple steps, we have installed and configured OpenFaaS to use the new
+Lambda provider to serve docker based serverless functions directly from AWS Lambda. There a many possible use cases
+for this technology, which we explored in our previous article [announcing support for AWS Lambda](../introducing-openfaas-for-lambda).
+We are excited about this new provider and would love to get early feedback from our user community.
